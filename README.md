@@ -32,9 +32,7 @@ A stratified 80:20 train-test split with random_state=42 is used.
 
 ### c. GitHub Repository Link
 
-Add the final GitHub repository URL here after uploading the project:
-
-`https://github.com/<your-username>/<your-repository-name>`
+`https://github.com/2025AC05615/breast-cancer-ml-classification/`
 
 ### d. Models Used and Evaluation Results
 
