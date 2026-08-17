@@ -47,6 +47,29 @@ def load_test_data():
 def load_model(model_name):
     return joblib.load(BASE_DIR / "models" / MODEL_FILES[model_name])
 
+
+def get_positive_class_scores(model, X_input):
+    try:
+        if hasattr(model, "predict_proba"):
+            return model.predict_proba(X_input)[:, 1], "probability", None
+    except Exception as exc:
+        probability_error = str(exc)
+    else:
+        probability_error = None
+
+    try:
+        if hasattr(model, "decision_function"):
+            return model.decision_function(X_input), "score", probability_error
+    except Exception as exc:
+        score_error = str(exc)
+        if probability_error:
+            return None, None, f"predict_proba failed: {probability_error}; decision_function failed: {score_error}"
+        return None, None, f"decision_function failed: {score_error}"
+
+    if probability_error:
+        return None, None, f"predict_proba failed: {probability_error}"
+    return None, None, None
+
 metrics_df = load_metrics()
 test_df = load_test_data()
 
@@ -105,12 +128,16 @@ elif page == "Model Evaluation":
 
     X_input = scaler.transform(X_test) if scaler is not None else X_test
     y_pred = model.predict(X_input)
+    y_scores, score_kind, score_error = get_positive_class_scores(model, X_input)
+    auc = roc_auc_score(y_test, y_scores) if y_scores is not None else np.nan
 
-    if hasattr(model, "predict_proba"):
-        y_prob = model.predict_proba(X_input)[:, 1]
-        auc = roc_auc_score(y_test, y_prob)
-    else:
-        auc = np.nan
+    if score_error:
+        st.warning(
+            "Model probability output is unavailable for this artifact. "
+            f"Details: {score_error}"
+        )
+    elif score_kind == "score":
+        st.info("AUC is computed from decision scores because probabilities are unavailable.")
 
     values = {
         "Accuracy": accuracy_score(y_test, y_pred),
@@ -166,13 +193,23 @@ elif page == "Test Data Prediction":
         X = prediction_df[feature_names]
         X_input = scaler.transform(X) if scaler is not None else X
         pred = model.predict(X_input)
+        y_scores, score_kind, score_error = get_positive_class_scores(model, X_input)
 
         result = prediction_df.copy()
         result["predicted_class"] = np.where(pred == 1, "Benign", "Malignant")
 
-        if hasattr(model, "predict_proba"):
-            prob = model.predict_proba(X_input)[:, 1]
-            result["benign_probability"] = prob
+        if score_kind == "probability":
+            result["benign_probability"] = y_scores
+        elif score_kind == "score":
+            result["benign_score"] = y_scores
+
+        if score_error:
+            st.warning(
+                "Model probability output is unavailable for this artifact. "
+                f"Details: {score_error}"
+            )
+        elif score_kind == "score":
+            st.info("Prediction output includes decision scores because probabilities are unavailable.")
 
         st.success(f"Predictions completed using {selected_model}.")
         st.dataframe(result.head(50), use_container_width=True)
